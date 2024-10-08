@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenAI API 测试工具</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 20px;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        .container {
+            max-width: 800px;
+            margin: auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        label {
+            display: block;
+            margin-top: 10px;
+            font-weight: bold;
+        }
+        input[type="text"], textarea, input[type="number"] {
+            width: 97%;
+            padding: 10px;
+            margin-top: 5px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        button {
+            background-color: #28a745;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 10px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 10px;
+            width: 100%;
+        }
+        button:hover {
+            background-color: #218838;
+        }
+        #chatHistory {
+            margin-top: 20px;
+            border: 1px solid #ccc;
+            padding: 10px;
+            background-color: #f9f9f9;
+            border-radius: 4px;
+            overflow: auto;
+            max-height: 300px;
+        }
+        .message {
+            margin-bottom: 10px;
+            padding: 5px;
+            border-radius: 4px;
+        }
+        .user {
+            background-color: #e6f3ff;
+        }
+        .assistant {
+            background-color: #f0f0f0;
+        }
+        .spinner {
+            display: none;
+            text-align: center;
+            margin-top: 20px;
+        }
+        .spinner i {
+            font-size: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .advanced-options {
+            margin-top: 20px;
+            border: 1px solid #ccc;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .advanced-options h3 {
+            margin-top: 0;
+            margin-bottom: 0;
+            cursor: pointer;
+        }
+        .advanced-options-content {
+            display: none;
+        }
+        .advanced-options.open .advanced-options-content {
+            display: block;
+        }
+        .advanced-options h3:before {
+            content: '▶ ';
+            font-size: 0.8em;
+        }
+        .advanced-options.open h3:before {
+            content: '▼ ';
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/showdown/1.9.1/showdown.min.js"></script>
+</head>
+<body>
+    <h1><i class="fas fa-robot"></i> OpenAI API 测试工具</h1>
+    <div class="container">
+        <label for="url">API URL:</label>
+        <input type="text" id="url" placeholder="https://api.openai.com">
+        
+        <label for="key">API Key:</label>
+        <input type="text" id="key">
+
+        <label for="model">模型:</label>
+        <input type="text" id="model" value="gpt-4o-mini">
+
+        <label for="input">消息:</label>
+        <textarea id="input" rows="4"></textarea>
+
+        <button id="submit">发送消息</button>
+
+        <div class="spinner"><i class="fas fa-spinner"></i></div>
+
+        <h2>对话历史:</h2>
+        <div id="chatHistory"></div>
+
+        <div class="advanced-options">
+            <h3>高级选项</h3>
+            <div class="advanced-options-content">
+                <label for="temperature">Temperature:</label>
+                <input type="number" id="temperature" value="1" min="0" max="2" step="0.1">
+
+                <label for="max_tokens">Max Tokens:</label>
+                <input type="number" id="max_tokens" value="512" min="1">
+
+                <label for="top_p">Top P:</label>
+                <input type="number" id="top_p" value="1" min="0" max="1" step="0.1">
+
+                <label for="frequency_penalty">Frequency Penalty:</label>
+                <input type="number" id="frequency_penalty" value="0" min="-2" max="2" step="0.1">
+
+                <label for="presence_penalty">Presence Penalty:</label>
+                <input type="number" id="presence_penalty" value="0" min="-2" max="2" step="0.1">
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let messages = [];
+        const converter = new showdown.Converter();
+
+        // Toggle advanced options
+        document.querySelector('.advanced-options h3').onclick = function() {
+            this.parentElement.classList.toggle('open');
+        };
+
+        // Function to send message
+        async function sendMessage() {
+            const url = document.getElementById('url').value + '/v1/chat/completions';
+            const key = document.getElementById('key').value;
+            const model = document.getElementById('model').value;
+            const inputText = document.getElementById('input').value;
+
+            if (!inputText.trim()) return; // Don't send empty messages
+
+            const chatHistory = document.getElementById('chatHistory');
+            const spinner = document.querySelector('.spinner');
+            spinner.style.display = 'block';
+
+            // Add user message to chat history
+            messages.push({ role: "user", content: inputText });
+            chatHistory.innerHTML += `<div class="message user">${converter.makeHtml(inputText)}</div>`;
+
+            // Clear input
+            document.getElementById('input').value = '';
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${key}`
+                    },
+                    body: JSON.stringify({
+                        model: model,
+                        messages: messages,
+                        temperature: parseFloat(document.getElementById('temperature').value),
+                        max_tokens: parseInt(document.getElementById('max_tokens').value),
+                        top_p: parseFloat(document.getElementById('top_p').value),
+                        frequency_penalty: parseFloat(document.getElementById('frequency_penalty').value),
+                        presence_penalty: parseFloat(document.getElementById('presence_penalty').value)
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                const content = data.choices[0]?.message?.content || "没有返回内容";
+
+                // Add assistant message to chat history
+                messages.push({ role: "assistant", content: content });
+                chatHistory.innerHTML += `<div class="message assistant">${converter.makeHtml(content)}</div>`;
+
+                // Scroll to bottom of chat history
+                chatHistory.scrollTop = chatHistory.scrollHeight;
+            } catch (error) {
+                chatHistory.innerHTML += `<div class="message assistant">请求失败: ${error.message}</div>`;
+            } finally {
+                spinner.style.display = 'none';
+            }
+        }
+
+        // Send message on button click
+        document.getElementById('submit').onclick = sendMessage;
+
+        // Send message on Enter key press (Shift+Enter for new line)
+        document.getElementById('input').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault(); // Prevent default to avoid adding a new line
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>
