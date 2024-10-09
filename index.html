@@ -37,6 +37,11 @@
             border-radius: 4px;
             font-size: 14px;
         }
+        .button-container {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 10px;
+        }
         button {
             background-color: #28a745;
             color: white;
@@ -46,7 +51,7 @@
             cursor: pointer;
             font-size: 16px;
             margin-top: 10px;
-            width: 100%;
+            width: 32%;
         }
         button:hover {
             background-color: #218838;
@@ -126,7 +131,11 @@
         <label for="input">消息:</label>
         <textarea id="input" rows="4"></textarea>
 
-        <button id="submit">发送消息</button>
+        <div class="button-container">
+            <button id="submit">发送消息</button>
+            <button id="functionTest">测试函数调用（Function Call）</button>
+            <button id="clearHistory">清空历史记录</button>
+        </div>        
 
         <div class="spinner"><i class="fas fa-spinner"></i></div>
 
@@ -220,6 +229,63 @@
                 spinner.style.display = 'none';
             }
         }
+
+        // 测试函数调用能力的函数
+        async function testFunctionCallCapability() {
+            const url = document.getElementById('url').value + '/v1/chat/completions';
+            const key = document.getElementById('key').value;
+            const model = document.getElementById('model').value;
+
+            const chatHistory = document.getElementById('chatHistory');
+            const spinner = document.querySelector('.spinner');
+            spinner.style.display = 'block';
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${key}`
+                    },
+                    body: JSON.stringify({
+                        model: model,
+                        messages: [{ role: "system", content: "测试函数调用能力" }],
+                        functions: [{
+                            name: "get_current_time",
+                            description: "返回当前系统时间",
+                            parameters: { type: "object", properties: {} }
+                        }],
+                        function_call: "auto",
+                        temperature: 0
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (data.choices[0]?.message?.function_call) {
+                    // 模拟函数调用并获取当前时间
+                    const currentTime = new Date().toLocaleTimeString();
+                    chatHistory.innerHTML += `<div class="message assistant">该模型具备函数调用能力（使用插件get_current_time，返回时间 ${currentTime}）</div>`;
+                } else {
+                    chatHistory.innerHTML += `<div class="message assistant">该模型不具备函数调用能力</div>`;
+                }
+
+            } catch (error) {
+                chatHistory.innerHTML += `<div class="message assistant">请求失败: ${error.message}</div>`;
+            } finally {
+                spinner.style.display = 'none';
+            }
+        }
+
+        // clear history
+        function clearHistory() {
+            messages = [];
+            document.getElementById('chatHistory').innerHTML = '';
+        }
+
+        document.getElementById('submit').onclick = sendMessage;
+        document.getElementById('functionTest').onclick = testFunctionCallCapability;
+        document.getElementById('clearHistory').onclick = clearHistory;
 
         // Send message on button click
         document.getElementById('submit').onclick = sendMessage;
