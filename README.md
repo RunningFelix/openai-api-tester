@@ -18,7 +18,7 @@ This is a simple web interface to test the OpenAI API. Users can input API detai
 4. View the response in the chat history.
 
 ### Live Demo
-Visit the live page here: [Your GitHub Pages link](https://runningfelix.github.io/openai-api-tester/)
+Visit the live page here: [GitHub Pages link](https://runningfelix.github.io/openai-api-tester/)
 
 ### License
 This project is licensed under the [MIT License](LICENSE).
@@ -43,7 +43,7 @@ This project is licensed under the [MIT License](LICENSE).
 4. 在对话历史中查看 API 响应。
 
 ### 在线演示
-访问此链接查看在线页面：[Your GitHub Pages link](https://runningfelix.github.io/openai-api-tester/)
+访问此链接查看在线页面：[GitHub Pages link](https://runningfelix.github.io/openai-api-tester/)
 
 ### 许可证
 此项目使用 [MIT 许可证](LICENSE)。
