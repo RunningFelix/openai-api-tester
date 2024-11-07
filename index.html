@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OpenAI API 测试工具</title>
+    <title>API 测试工具</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
     <style>
         body {
@@ -113,20 +113,84 @@
         .advanced-options.open h3:before {
             content: '▼ ';
         }
+        .input-with-history {
+            position: relative;
+            width: 100%;
+        }
+        .input-with-history input {
+            width: 97%;
+            padding: 10px;
+            margin-top: 5px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .history-dropdown {
+            display: none;
+            position: absolute;
+            width: 99.5%;
+            max-height: 200px;
+            overflow-y: auto;
+            background: #f0f0f0;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            z-index: 1000;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+        }
+        .history-item {
+            padding: 8px 12px;
+            cursor: pointer;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .history-item .key {
+            flex-grow: 1;
+        }
+        .history-item .url {
+            color: #666;
+            font-size: 0.9em;
+            margin-left: 10px;
+        }
+        .history-item:hover {
+            background-color: #ccc;
+        }
+        .clear-config-btn {
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 8px 16px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        .clear-config-btn:hover {
+            background-color: #c82333;
+        }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/showdown/1.9.1/showdown.min.js"></script>
 </head>
 <body>
-    <h1><i class="fas fa-robot"></i> OpenAI API 测试工具</h1>
+    <h1><i class="fas fa-robot"></i> API 测试工具</h1>
     <div class="container">
-        <label for="url">API URL:</label>
-        <input type="text" id="url" placeholder="https://api.openai.com">
+        <label for="url">Base URL:</label>
+        <div class="input-with-history">
+            <input type="text" id="url" placeholder="https://api.openai.com">
+            <div id="urlHistory" class="history-dropdown"></div>
+        </div>
         
         <label for="key">API Key:</label>
-        <input type="text" id="key">
+        <div class="input-with-history">
+            <input type="text" id="key">
+            <div id="keyHistory" class="history-dropdown"></div>
+        </div>
 
         <label for="model">模型:</label>
-        <input type="text" id="model" value="gpt-4o-mini">
+        <div class="input-with-history">
+            <input type="text" id="model" value="gpt-4o">
+            <div id="modelHistory" class="history-dropdown"></div>
+        </div>
 
         <label for="input">消息:</label>
         <textarea id="input" rows="4"></textarea>
@@ -159,6 +223,8 @@
 
                 <label for="presence_penalty">Presence Penalty:</label>
                 <input type="number" id="presence_penalty" value="0" min="-2" max="2" step="0.1">
+
+                <button id="clearConfig" class="clear-config-btn">清除API配置历史记录</button>
             </div>
         </div>
     </div>
@@ -172,14 +238,231 @@
             this.parentElement.classList.toggle('open');
         };
 
+        // 配置历史记录管理
+        class ConfigHistory {
+            constructor(maxItems = 10) {
+                this.maxItems = maxItems;
+                this.loadHistory();
+                this.setupInputHandlers();
+                this.loadLastUsedConfig();
+            }
+
+            loadHistory() {
+                this.urlHistory = JSON.parse(localStorage.getItem('urlHistory') || '[]');
+                this.keyHistory = JSON.parse(localStorage.getItem('keyHistory') || '[]');
+                this.modelHistory = JSON.parse(localStorage.getItem('modelHistory') || '[]');
+                this.keyUrlMap = JSON.parse(localStorage.getItem('keyUrlMap') || '{}');
+                this.lastUsedConfig = JSON.parse(localStorage.getItem('lastUsedConfig') || '{}');
+            }
+
+            saveHistory() {
+                localStorage.setItem('urlHistory', JSON.stringify(this.urlHistory));
+                localStorage.setItem('keyHistory', JSON.stringify(this.keyHistory));
+                localStorage.setItem('modelHistory', JSON.stringify(this.modelHistory));
+                localStorage.setItem('keyUrlMap', JSON.stringify(this.keyUrlMap));
+            }
+
+            addToHistory(type, value) {
+                if (!value) return;
+                
+                const historyArray = this[`${type}History`];
+                const index = historyArray.indexOf(value);
+                
+                if (index !== -1) {
+                    historyArray.splice(index, 1);
+                }
+                
+                historyArray.unshift(value);
+                
+                if (historyArray.length > this.maxItems) {
+                    historyArray.pop();
+                }
+                
+                this.saveHistory();
+            }
+
+            updateKeyUrlMap(key, url) {
+                if (key && url) {
+                    this.keyUrlMap[key] = url;
+                    this.saveHistory();
+                }
+            }
+
+            saveLastUsedConfig(config) {
+                const configToSave = config || {
+                    url: document.getElementById('url').value,
+                    key: document.getElementById('key').value,
+                    model: document.getElementById('model').value
+                };
+                localStorage.setItem('lastUsedConfig', JSON.stringify(configToSave));
+            }
+
+            loadLastUsedConfig() {
+                const config = JSON.parse(localStorage.getItem('lastUsedConfig') || '{}');
+                if (config.url) document.getElementById('url').value = config.url;
+                if (config.key) document.getElementById('key').value = config.key;
+                if (config.model) document.getElementById('model').value = config.model;
+            }
+
+            setupInputHandlers() {
+                ['url', 'key', 'model'].forEach(type => {
+                    const input = document.getElementById(type);
+                    const dropdown = document.getElementById(`${type}History`);
+
+                    input.addEventListener('focus', () => {
+                        this.showDropdown(type);
+                    });
+
+                    input.addEventListener('blur', () => {
+                        // 延迟隐藏下拉框，以允许点击选项
+                        setTimeout(() => this.hideDropdown(type), 200);
+                    });
+
+                    input.addEventListener('input', () => {
+                        this.filterHistory(type, input.value);
+                    });
+                });
+
+                // 清除配置按钮
+                document.getElementById('clearConfig').addEventListener('click', () => {
+                    this.clearAllHistory();
+                });
+            }
+
+            showDropdown(type) {
+                const dropdown = document.getElementById(`${type}History`);
+                const history = this[`${type}History`];
+                
+                dropdown.innerHTML = '';
+                history.forEach(item => {
+                    const div = document.createElement('div');
+                    div.className = 'history-item';
+                    
+                    if (type === 'key') {
+                        // 为key添加对应的URL信息
+                        const keySpan = document.createElement('span');
+                        keySpan.className = 'key';
+                        keySpan.textContent = item;
+                        
+                        const urlSpan = document.createElement('span');
+                        urlSpan.className = 'url';
+                        const mappedUrl = this.keyUrlMap[item]; 
+                        urlSpan.textContent = mappedUrl || '(无URL记录)';
+                        
+                        div.appendChild(keySpan);
+                        div.appendChild(urlSpan);
+                    } else {
+                        div.textContent = item;
+                    }
+                    
+                    div.addEventListener('click', () => {
+                        document.getElementById(type).value = item;
+                        // 如果选择了key，自动填充对应的URL
+                        if (type === 'key' && this.keyUrlMap[item]) {
+                            document.getElementById('url').value = this.keyUrlMap[item];
+                        }
+                        this.hideDropdown(type);
+                    });
+                    
+                    dropdown.appendChild(div);
+                });
+                
+                dropdown.style.display = 'block';
+            }
+
+            filterHistory(type, value) {
+                const dropdown = document.getElementById(`${type}History`);
+                const history = this[`${type}History`];
+                
+                dropdown.innerHTML = '';
+                const filtered = history.filter(item => 
+                    item.toLowerCase().includes(value.toLowerCase())
+                );
+                
+                filtered.forEach(item => {
+                    const div = document.createElement('div');
+                    div.className = 'history-item';
+                    
+                    if (type === 'key') {
+                        // 为过滤后的key添加对应的URL信息
+                        const keySpan = document.createElement('span');
+                        keySpan.className = 'key';
+                        keySpan.textContent = item;
+                        
+                        const urlSpan = document.createElement('span');
+                        urlSpan.className = 'url';
+                        const mappedUrl = this.keyUrlMap[item];
+                        urlSpan.textContent = mappedUrl || '(无URL记录)';
+                        
+                        div.appendChild(keySpan);
+                        div.appendChild(urlSpan);
+                    } else {
+                        div.textContent = item;
+                    }
+                    
+                    div.addEventListener('click', () => {
+                        document.getElementById(type).value = item;
+                        // 如果选择了key，自动填充对应的URL
+                        if (type === 'key' && this.keyUrlMap[item]) {
+                            document.getElementById('url').value = this.keyUrlMap[item];
+                        }
+                        this.hideDropdown(type);
+                    });
+                    
+                    dropdown.appendChild(div);
+                });
+                
+                dropdown.style.display = filtered.length ? 'block' : 'none';
+            }
+
+            hideDropdown(type) {
+                document.getElementById(`${type}History`).style.display = 'none';
+            }
+
+            clearAllHistory() {
+                this.urlHistory = [];
+                this.keyHistory = [];
+                this.modelHistory = [];
+                this.keyUrlMap = {};
+                this.saveHistory();
+                localStorage.removeItem('lastUsedConfig');
+                
+                // 清空输入框
+                document.getElementById('url').value = '';
+                document.getElementById('key').value = '';
+                document.getElementById('model').value = '';
+            }
+        }
+
+        // 初始化配置历史记录管理
+        const configHistory = new ConfigHistory();
+
+        function getApiUrl(baseUrl, isClaudeModel) {
+            // 确保 baseUrl 没有尾部斜杠
+            let cleanUrl = baseUrl.trim().replace(/\/+$/, '');
+            // 添加适当的路径
+            return `${cleanUrl}/${isClaudeModel ? 'v1/messages' : 'v1/chat/completions'}`;
+        }
+
         // Function to send message
         async function sendMessage() {
-            const url = document.getElementById('url').value + '/v1/chat/completions';
+            // 在发送消息前保存配置
+            const originalUrl = document.getElementById('url').value.trim();
             const key = document.getElementById('key').value;
             const model = document.getElementById('model').value;
             const inputText = document.getElementById('input').value;
 
-            if (!inputText.trim()) return; // Don't send empty messages
+            if (!inputText.trim()) return;
+            
+            configHistory.addToHistory('url', originalUrl);
+            configHistory.addToHistory('key', key);
+            configHistory.addToHistory('model', model);
+            configHistory.updateKeyUrlMap(key, originalUrl); 
+            configHistory.saveLastUsedConfig({ url: originalUrl, key, model });
+
+            const isClaudeModel = model.toLowerCase().includes('claude');
+            
+            const apiUrl = getApiUrl(originalUrl, isClaudeModel);
 
             const chatHistory = document.getElementById('chatHistory');
             const spinner = document.querySelector('.spinner');
@@ -189,25 +472,23 @@
             messages.push({ role: "user", content: inputText });
             chatHistory.innerHTML += `<div class="message user">${converter.makeHtml(inputText)}</div>`;
 
-            // Clear input
             document.getElementById('input').value = '';
 
             try {
-                const response = await fetch(url, {
+                const headers = {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${key}`
+                };
+
+                // 为Claude模型添加特定的header
+                if (isClaudeModel) {
+                    headers['anthropic-version'] = '2023-06-01';
+                }
+
+                const response = await fetch(apiUrl, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${key}`
-                    },
-                    body: JSON.stringify({
-                        model: model,
-                        messages: messages,
-                        temperature: parseFloat(document.getElementById('temperature').value),
-                        max_tokens: parseInt(document.getElementById('max_tokens').value),
-                        top_p: parseFloat(document.getElementById('top_p').value),
-                        frequency_penalty: parseFloat(document.getElementById('frequency_penalty').value),
-                        presence_penalty: parseFloat(document.getElementById('presence_penalty').value)
-                    })
+                    headers: headers,
+                    body: JSON.stringify(createRequestBody(model, messages))
                 });
 
                 if (!response.ok) {
@@ -215,13 +496,16 @@
                 }
 
                 const data = await response.json();
-                const content = data.choices[0]?.message?.content || "没有返回内容";
+                let content;
+                
+                if (isClaudeModel) {
+                    content = data.content[0].text;
+                } else {
+                    content = data.choices[0]?.message?.content || "没有返回内容";
+                }
 
-                // Add assistant message to chat history
                 messages.push({ role: "assistant", content: content });
                 chatHistory.innerHTML += `<div class="message assistant">${converter.makeHtml(content)}</div>`;
-
-                // Scroll to bottom of chat history
                 chatHistory.scrollTop = chatHistory.scrollHeight;
             } catch (error) {
                 chatHistory.innerHTML += `<div class="message assistant">请求失败: ${error.message}</div>`;
@@ -230,46 +514,186 @@
             }
         }
 
-        // 测试函数调用能力的函数
+        // 获取指定时区的当前时间
+        function getCurrentTime(timezone = 'Asia/Shanghai') {
+            try {
+                const options = {
+                    timeZone: timezone,
+                    hour12: false,
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit'
+                };
+                return new Date().toLocaleTimeString('zh-CN', options);
+            } catch (error) {
+                // 如果时区无效,返回本地时间
+                return new Date().toLocaleTimeString('zh-CN', { hour12: false });
+            }
+        }
+
+        // 创建请求体函数
+        function createRequestBody(model, messages) {
+            const isClaudeModel = model.toLowerCase().includes('claude');
+            
+            if (isClaudeModel) {
+                // Claude模型的请求体
+                return {
+                    model: model,
+                    max_tokens: parseInt(document.getElementById('max_tokens').value),
+                    messages: messages.map(msg => ({
+                        role: msg.role,
+                        content: msg.content
+                    }))
+                };
+            } else {
+                // OpenAI模型的请求体
+                return {
+                    model: model,
+                    messages: messages,
+                    temperature: parseFloat(document.getElementById('temperature').value),
+                    max_tokens: parseInt(document.getElementById('max_tokens').value),
+                    top_p: parseFloat(document.getElementById('top_p').value),
+                    frequency_penalty: parseFloat(document.getElementById('frequency_penalty').value),
+                    presence_penalty: parseFloat(document.getElementById('presence_penalty').value)
+                };
+            }
+        }
+
+        // 测试函数调用能力
         async function testFunctionCallCapability() {
-            const url = document.getElementById('url').value + '/v1/chat/completions';
+            // 在测试前保存配置
+            const originalUrl = document.getElementById('url').value.trim();
             const key = document.getElementById('key').value;
             const model = document.getElementById('model').value;
+            const isClaudeModel = model.toLowerCase().includes('claude');
+
+            const apiUrl = getApiUrl(originalUrl, isClaudeModel);
+
+            configHistory.addToHistory('url', originalUrl);
+            configHistory.addToHistory('key', key);
+            configHistory.addToHistory('model', model);
+            configHistory.updateKeyUrlMap(key, originalUrl);
+            configHistory.saveLastUsedConfig({ url: originalUrl, key, model });
 
             const chatHistory = document.getElementById('chatHistory');
             const spinner = document.querySelector('.spinner');
             spinner.style.display = 'block';
 
             try {
-                const response = await fetch(url, {
+                const headers = {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${key}`
+                };
+
+                if (isClaudeModel) {
+                    headers['anthropic-version'] = '2023-06-01';
+                }
+
+                const requestBody = isClaudeModel ? {
+                    // Claude的工具调用请求体
+                    model: model,
+                    max_tokens: 1024,
+                    tools: [{
+                        name: "get_current_time",
+                        description: "返回指定时区的当前系统时间，格式为HH:MM:SS。这个函数应该在用户询问当前时间或需要了解特定时区时间时使用。",
+                        input_schema: {
+                            type: "object",
+                            properties: {
+                                timezone: {
+                                    type: "string",
+                                    description: "时区名称，例如 'UTC', 'Asia/Shanghai'"
+                                }
+                            },
+                            required: ["timezone"]
+                        }
+                    }],
+                    messages: [{
+                        role: "user",
+                        content: "What is the current time in Shanghai?"
+                    }],
+                    tool_choice: { type: "tool", name: "get_current_time" }
+                } : {
+                    // OpenAI的函数调用请求体
+                    model: model,
+                    messages: [{
+                        role: "user",
+                        content: "What time is it in Shanghai?"
+                    }],
+                    functions: [{
+                        name: "get_current_time",
+                        description: "Returns the current system time in HH:MM:SS format",
+                        parameters: {
+                            type: "object",
+                            properties: {
+                                timezone: {
+                                    type: "string",
+                                    description: "Timezone for the time"
+                                }
+                            },
+                            required: ["timezone"]
+                        }
+                    }],
+                    function_call: { name: "get_current_time" }
+                };
+
+                const response = await fetch(apiUrl, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${key}`
-                    },
-                    body: JSON.stringify({
-                        model: model,
-                        messages: [{ role: "system", content: "测试函数调用能力" }],
-                        functions: [{
-                            name: "get_current_time",
-                            description: "返回当前系统时间",
-                            parameters: { type: "object", properties: {} }
-                        }],
-                        function_call: "auto",
-                        temperature: 0
-                    })
+                    headers: headers,
+                    body: JSON.stringify(requestBody)
                 });
 
                 const data = await response.json();
                 
-                if (data.choices[0]?.message?.function_call) {
-                    // 模拟函数调用并获取当前时间
-                    const currentTime = new Date().toLocaleTimeString();
-                    chatHistory.innerHTML += `<div class="message assistant">该模型具备函数调用能力（使用插件get_current_time，返回时间 ${currentTime}）</div>`;
+                // 解析响应
+                if (isClaudeModel) {
+                // 检查Claude的工具调用响应
+                const toolCall = data.content?.find(content => 
+                    content.type === "tool_calls" || 
+                    content.type === "tool_use"
+                );
+                
+                if (toolCall) {
+                    const requestedTimezone = toolCall.input?.timezone || 'Asia/Shanghai';
+                    const currentTime = getCurrentTime(requestedTimezone);
+                    chatHistory.innerHTML += `
+                        <div class="message assistant">
+                            工具调用成功！<br>
+                            请求获取时区: ${requestedTimezone}<br>
+                            当前时间为: ${currentTime}
+                        </div>`;
                 } else {
-                    chatHistory.innerHTML += `<div class="message assistant">该模型不具备函数调用能力</div>`;
+                    chatHistory.innerHTML += `
+                        <div class="message assistant">
+                            模型尝试获取时间但未成功调用工具。
+                        </div>`;
                 }
-
+            } else {
+                // 检查OpenAI的函数调用响应
+                const functionCall = data.choices[0]?.message?.function_call;
+                if (functionCall) {
+                    try {
+                        const args = JSON.parse(functionCall.arguments);
+                        const requestedTimezone = args.timezone || 'Asia/Shanghai';
+                        const currentTime = getCurrentTime(requestedTimezone);
+                        chatHistory.innerHTML += `
+                            <div class="message assistant">
+                                函数调用成功！<br>
+                                请求获取时区: ${requestedTimezone}<br>
+                                当前时间为: ${currentTime}
+                            </div>`;
+                    } catch (error) {
+                        chatHistory.innerHTML += `
+                            <div class="message assistant">
+                                函数调用成功,但参数解析失败: ${functionCall.arguments}
+                            </div>`;
+                    }
+                } else {
+                    chatHistory.innerHTML += `
+                        <div class="message assistant">
+                            模型尝试获取时间但未成功调用函数。
+                        </div>`;
+                }
+            }
             } catch (error) {
                 chatHistory.innerHTML += `<div class="message assistant">请求失败: ${error.message}</div>`;
             } finally {
@@ -277,23 +701,21 @@
             }
         }
 
-        // clear history
+        // 清空历史
         function clearHistory() {
             messages = [];
             document.getElementById('chatHistory').innerHTML = '';
         }
 
+        // 事件监听器
         document.getElementById('submit').onclick = sendMessage;
         document.getElementById('functionTest').onclick = testFunctionCallCapability;
         document.getElementById('clearHistory').onclick = clearHistory;
 
-        // Send message on button click
-        document.getElementById('submit').onclick = sendMessage;
-
-        // Send message on Enter key press (Shift+Enter for new line)
+        // 支持Enter发送
         document.getElementById('input').addEventListener('keydown', function(e) {
             if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault(); // Prevent default to avoid adding a new line
+                e.preventDefault();
                 sendMessage();
             }
         });
