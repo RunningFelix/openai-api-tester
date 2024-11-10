@@ -30,7 +30,8 @@
             font-weight: bold;
         }
         input[type="text"], textarea, input[type="number"] {
-            width: 97%;
+            box-sizing: border-box;
+            width: 100%;
             padding: 10px;
             margin-top: 5px;
             border: 1px solid #ccc;
@@ -50,11 +51,18 @@
             padding: 10px;
             cursor: pointer;
             font-size: 16px;
+            font-weight: bold;
             margin-top: 10px;
             width: 32%;
         }
         button:hover {
             background-color: #218838;
+        }
+        .button-container button {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            justify-content: center;
         }
         #chatHistory {
             margin-top: 20px;
@@ -75,6 +83,14 @@
         }
         .assistant {
             background-color: #f0f0f0;
+        }
+        .message.assistant.error {
+            background-color: #ffefe8; /*  柔和的红白 */
+            /*  其他错误样式，例如：*/
+            color: #b91c1c; /*  深红色文字 */
+            font-weight: bold;
+            border: 1px solid #ef4444; /*  红色边框 */
+            padding: 10px; /* 内边距 */
         }
         .spinner {
             display: none;
@@ -117,18 +133,19 @@
             position: relative;
             width: 100%;
         }
-        .input-with-history input {
-            width: 97%;
-            padding: 10px;
-            margin-top: 5px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            font-size: 14px;
+        .input-row {
+            display: flex;
+            gap: 20px;
+            margin-top: 10px;
+        }
+        .input-row .input-with-history {
+            flex: 1;
         }
         .history-dropdown {
+            box-sizing: border-box;
             display: none;
             position: absolute;
-            width: 99.5%;
+            width: 100%;
             max-height: 200px;
             overflow-y: auto;
             background: #f0f0f0;
@@ -186,19 +203,27 @@
             <div id="keyHistory" class="history-dropdown"></div>
         </div>
 
-        <label for="model">模型:</label>
-        <div class="input-with-history">
-            <input type="text" id="model" value="gpt-4o">
-            <div id="modelHistory" class="history-dropdown"></div>
+        <div class="input-row">
+            <div class="input-with-history">
+                <label for="model">模型:</label>
+                <input type="text" id="model" value="gpt-4">
+                <div id="modelHistory" class="history-dropdown"></div>
+            </div>
+            
+            <div class="input-with-history">
+                <label for="endpoint">请求路径:</label>
+                <input type="text" id="endpoint" value="auto" placeholder="auto（自动匹配）">
+                <div id="endpointHistory" class="history-dropdown"></div>
+            </div>
         </div>
 
         <label for="input">消息:</label>
         <textarea id="input" rows="4"></textarea>
 
         <div class="button-container">
-            <button id="submit">发送消息（Enter）</button>
-            <button id="functionTest">函数调用（Function Calling）</button>
-            <button id="clearHistory">清空历史记录</button>
+            <button id="submit"><i class="fas fa-paper-plane"></i> 发送消息-Enter</button>
+            <button id="functionTest"><i class="fas fa-code"></i> 函数/工具 调用</button>
+            <button id="clearHistory"><i class="fas fa-trash-alt"></i> 清空历史记录</button>
         </div>        
 
         <div class="spinner"><i class="fas fa-spinner"></i></div>
@@ -242,6 +267,16 @@
         class ConfigHistory {
             constructor(maxItems = 10) {
                 this.maxItems = maxItems;
+                this.commonEndpoints = [
+                    { value: 'auto', label: 'auto（自动匹配）' },
+                    { value: '/v1/chat/completions', label: 'OpenAI (/v1/chat/completions)' },
+                    { value: '/v1/messages', label: 'Claude (/v1/messages)' }
+                ];
+                const savedEndpoints = JSON.parse(localStorage.getItem('endpointHistory') || '[]');
+                this.endpointHistory = [...new Set([
+                    ...this.commonEndpoints.map(e => e.value),
+                    ...savedEndpoints.filter(e => !this.commonEndpoints.map(c => c.value).includes(e))
+                ])];
                 this.loadHistory();
                 this.setupInputHandlers();
                 this.loadLastUsedConfig();
@@ -253,6 +288,7 @@
                 this.modelHistory = JSON.parse(localStorage.getItem('modelHistory') || '[]');
                 this.keyUrlMap = JSON.parse(localStorage.getItem('keyUrlMap') || '{}');
                 this.lastUsedConfig = JSON.parse(localStorage.getItem('lastUsedConfig') || '{}');
+                this.endpointHistory = JSON.parse(localStorage.getItem('endpointHistory') || '[]');
             }
 
             saveHistory() {
@@ -260,6 +296,7 @@
                 localStorage.setItem('keyHistory', JSON.stringify(this.keyHistory));
                 localStorage.setItem('modelHistory', JSON.stringify(this.modelHistory));
                 localStorage.setItem('keyUrlMap', JSON.stringify(this.keyUrlMap));
+                localStorage.setItem('endpointHistory', JSON.stringify(this.endpointHistory));
             }
 
             addToHistory(type, value) {
@@ -288,13 +325,14 @@
                 }
             }
 
-            saveLastUsedConfig(config) {
-                const configToSave = config || {
+            saveLastUsedConfig() {
+                const config = {
                     url: document.getElementById('url').value,
                     key: document.getElementById('key').value,
-                    model: document.getElementById('model').value
+                    model: document.getElementById('model').value,
+                    endpoint: document.getElementById('endpoint').value
                 };
-                localStorage.setItem('lastUsedConfig', JSON.stringify(configToSave));
+                localStorage.setItem('lastUsedConfig', JSON.stringify(config));
             }
 
             loadLastUsedConfig() {
@@ -302,24 +340,32 @@
                 if (config.url) document.getElementById('url').value = config.url;
                 if (config.key) document.getElementById('key').value = config.key;
                 if (config.model) document.getElementById('model').value = config.model;
+                if (config.endpoint) document.getElementById('endpoint').value = config.endpoint;
             }
 
             setupInputHandlers() {
-                ['url', 'key', 'model'].forEach(type => {
+                ['url', 'key', 'model', 'endpoint'].forEach(type => {
                     const input = document.getElementById(type);
                     const dropdown = document.getElementById(`${type}History`);
 
                     input.addEventListener('focus', () => {
-                        this.showDropdown(type);
+                        if (type === 'endpoint') {
+                            this.showEndpointDropdown();
+                        } else {
+                            this.showDropdown(type);
+                        }
                     });
 
                     input.addEventListener('blur', () => {
-                        // 延迟隐藏下拉框，以允许点击选项
                         setTimeout(() => this.hideDropdown(type), 200);
                     });
 
                     input.addEventListener('input', () => {
-                        this.filterHistory(type, input.value);
+                        if (type === 'endpoint') {
+                            this.filterEndpointHistory(input.value);
+                        } else {
+                            this.filterHistory(type, input.value);
+                        }
                     });
                 });
 
@@ -367,6 +413,88 @@
                     dropdown.appendChild(div);
                 });
                 
+                dropdown.style.display = 'block';
+            }
+
+            filterEndpointHistory(value) {
+                const dropdown = document.getElementById('endpointHistory');
+                dropdown.innerHTML = '';
+
+                const filteredHistory = this.endpointHistory.filter(endpoint =>
+                    endpoint.toLowerCase().includes(value.toLowerCase())
+                );
+
+                const filteredCommon = this.commonEndpoints.filter(e => 
+                    e.label.toLowerCase().includes(value.toLowerCase()) || 
+                    e.value.toLowerCase().includes(value.toLowerCase())
+                );
+
+
+                // 总是先添加常用选项
+                filteredCommon.forEach(endpoint => {
+                    const div = document.createElement('div');
+                    div.className = 'history-item';
+                    div.textContent = endpoint.label;
+
+                    div.addEventListener('click', () => {
+                        document.getElementById('endpoint').value = endpoint.value;
+                        this.hideDropdown('endpoint');
+                    });
+
+                    dropdown.appendChild(div);
+                });
+
+
+                // 然后添加过滤后的历史记录 (排除已存在的常用选项)
+                filteredHistory.filter(item => !filteredCommon.map(e=>e.value).includes(item)).forEach(endpoint => {
+                    const div = document.createElement('div');
+                    div.className = 'history-item';
+                    div.textContent = endpoint;
+
+                    div.addEventListener('click', () => {
+                        document.getElementById('endpoint').value = endpoint;
+                        this.hideDropdown('endpoint');
+                    });
+
+                    dropdown.appendChild(div);
+                });
+
+                dropdown.style.display = (filteredCommon.length > 0 || filteredHistory.length > 0) ? 'block' : 'none';
+            }
+
+            showEndpointDropdown() {
+                const dropdown = document.getElementById('endpointHistory');
+                dropdown.innerHTML = '';
+
+                this.commonEndpoints.forEach(endpoint => {
+                    const div = document.createElement('div');
+                    div.className = 'history-item';
+                    div.textContent = endpoint.label;
+
+                    div.addEventListener('click', () => {
+                        document.getElementById('endpoint').value = endpoint.value;
+                        this.hideDropdown('endpoint');
+                    });
+
+                    dropdown.appendChild(div);
+                });
+
+
+                this.endpointHistory.filter(item => !this.commonEndpoints.map(e=>e.value).includes(item)).forEach(endpoint => {
+                    const div = document.createElement('div');
+                    div.className = 'history-item';
+                    div.textContent = endpoint;
+
+                    div.addEventListener('click', () => {
+                        document.getElementById('endpoint').value = endpoint;
+                        this.hideDropdown('endpoint');
+                    });
+
+                    dropdown.appendChild(div);
+                });
+
+
+
                 dropdown.style.display = 'block';
             }
 
@@ -437,53 +565,52 @@
         // 初始化配置历史记录管理
         const configHistory = new ConfigHistory();
 
-        function getApiUrl(baseUrl, isClaudeModel) {
-            // 确保 baseUrl 没有尾部斜杠
+        function getApiUrl(baseUrl, endpoint, model) {
             let cleanUrl = baseUrl.trim().replace(/\/+$/, '');
-            // 添加适当的路径
-            return `${cleanUrl}/${isClaudeModel ? 'v1/messages' : 'v1/chat/completions'}`;
+            
+            if (endpoint === 'auto') {
+                // 保持原有的自动判断逻辑
+                const isClaudeModel = model.toLowerCase().includes('claude');
+                return `${cleanUrl}/${isClaudeModel ? 'v1/messages' : 'v1/chat/completions'}`;
+            } else {
+                // 使用输入的路径
+                return `${cleanUrl}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
+            }
         }
 
         // Function to send message
         async function sendMessage() {
-            // 在发送消息前保存配置
             const originalUrl = document.getElementById('url').value.trim();
             const key = document.getElementById('key').value;
             const model = document.getElementById('model').value;
             const inputText = document.getElementById('input').value;
-
+            const endpoint = document.getElementById('endpoint').value;
+            
             if (!inputText.trim()) return;
             
-            configHistory.addToHistory('url', originalUrl);
-            configHistory.addToHistory('key', key);
-            configHistory.addToHistory('model', model);
-            configHistory.updateKeyUrlMap(key, originalUrl); 
-            configHistory.saveLastUsedConfig({ url: originalUrl, key, model });
-
-            const isClaudeModel = model.toLowerCase().includes('claude');
-            
-            const apiUrl = getApiUrl(originalUrl, isClaudeModel);
-
             const chatHistory = document.getElementById('chatHistory');
             const spinner = document.querySelector('.spinner');
             spinner.style.display = 'block';
 
-            // Add user message to chat history
-            messages.push({ role: "user", content: inputText });
-            chatHistory.innerHTML += `<div class="message user">${converter.makeHtml(inputText)}</div>`;
-
-            document.getElementById('input').value = '';
-
             try {
+                const apiUrl = getApiUrl(originalUrl, endpoint, model);
+                
+                // 保存配置
+                configHistory.addToHistory('url', originalUrl);
+                configHistory.addToHistory('key', key);
+                configHistory.addToHistory('model', model);
+                configHistory.addToHistory('endpoint', endpoint);
+                configHistory.updateKeyUrlMap(key, originalUrl);
+                configHistory.saveLastUsedConfig();
+
+                // 添加用户消息到历史记录
+                messages.push({ role: "user", content: inputText });
+                chatHistory.innerHTML += `<div class="message user">${converter.makeHtml(inputText)}</div>`;
+
                 const headers = {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${key}`
                 };
-
-                // 为Claude模型添加特定的header
-                if (isClaudeModel) {
-                    headers['anthropic-version'] = '2023-06-01';
-                }
 
                 const response = await fetch(apiUrl, {
                     method: 'POST',
@@ -492,23 +619,37 @@
                 });
 
                 if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                    const errorData = await response.json().catch(() => { return {error:{message:response.statusText}}}); // 尝试解析错误信息，如果解析失败则返回默认错误信息
+                    throw new Error(`API 错误 (${response.status}): ${errorData?.error?.message || response.statusText}`); // 显示更具体的错误信息
                 }
 
                 const data = await response.json();
                 let content;
-                
-                if (isClaudeModel) {
-                    content = data.content[0].text;
+
+                if (endpoint === '/v1/messages' || (endpoint === 'auto' && model.toLowerCase().includes('claude'))) {
+                    if (data.content && data.content.length > 0) { // 检查 content 是否存在和长度
+                        content = data.content[0].text;
+                    } else {
+                        throw new Error("API 返回了无效的响应数据（缺少 content 字段）");
+                    }
                 } else {
-                    content = data.choices[0]?.message?.content || "没有返回内容";
+                    if (data.choices && data.choices.length > 0) {
+                        content = data.choices[0].message?.content || "没有返回内容";
+                    } else {
+                        throw new Error("API 返回了无效的响应数据（缺少 choices 字段）"); //  更明确的错误信息
+                    }
                 }
 
                 messages.push({ role: "assistant", content: content });
                 chatHistory.innerHTML += `<div class="message assistant">${converter.makeHtml(content)}</div>`;
                 chatHistory.scrollTop = chatHistory.scrollHeight;
+                
+                // 只在成功发送后清空输入框
+                document.getElementById('input').value = '';
             } catch (error) {
-                chatHistory.innerHTML += `<div class="message assistant">请求失败: ${error.message}</div>`;
+                chatHistory.innerHTML += `<div class="message assistant error">请求失败: ${error.message}</div>`;
+                // 失败时不清空输入框
+                chatHistory.scrollTop = chatHistory.scrollHeight;
             } finally {
                 spinner.style.display = 'none';
             }
@@ -566,8 +707,9 @@
             const key = document.getElementById('key').value;
             const model = document.getElementById('model').value;
             const isClaudeModel = model.toLowerCase().includes('claude');
+            const endpoint = document.getElementById('endpoint').value;
 
-            const apiUrl = getApiUrl(originalUrl, isClaudeModel);
+            const apiUrl = getApiUrl(originalUrl, endpoint, model);
 
             configHistory.addToHistory('url', originalUrl);
             configHistory.addToHistory('key', key);
@@ -642,6 +784,15 @@
                     body: JSON.stringify(requestBody)
                 });
 
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => { return {error:{message:response.statusText}}}); 
+                    // 直接使用 errorData.error.message 作为错误信息显示
+                    chatHistory.innerHTML += `<div class="message assistant error">请求失败: ${errorData.error.message}</div>`;
+                    chatHistory.scrollTop = chatHistory.scrollHeight;
+                    spinner.style.display = 'none';
+                    return; // 提前返回，避免继续执行
+                }
+
                 const data = await response.json();
                 
                 // 解析响应
@@ -661,12 +812,22 @@
                             请求获取时区: ${requestedTimezone}<br>
                             当前时间为: ${currentTime}
                         </div>`;
-                } else {
-                    chatHistory.innerHTML += `
-                        <div class="message assistant">
-                            模型尝试获取时间但未成功调用工具。
-                        </div>`;
-                }
+                    } else {
+                        //  Claude 没有调用工具
+                        let message = "Claude 没有调用工具";
+
+                        if (data.choices && data.choices.length > 0 && data.choices[0].message && data.choices[0].message.content) {
+                            message += "，并返回了以下信息：<br>" + converter.makeHtml(data.choices[0].message.content);
+                        } else if (data.error && data.error.message) {
+                            message += `: ${data.error.message}`;
+                        } else {
+                            message += "，且未返回其他信息。";
+                        }
+
+                        chatHistory.innerHTML += `<div class="message assistant error">${message}</div>`;
+                    }
+
+                chatHistory.scrollTop = chatHistory.scrollHeight;
             } else {
                 // 检查OpenAI的函数调用响应
                 const functionCall = data.choices[0]?.message?.function_call;
@@ -683,20 +844,27 @@
                             </div>`;
                     } catch (error) {
                         chatHistory.innerHTML += `
-                            <div class="message assistant">
+                            <div class="message assistant error">
                                 函数调用成功,但参数解析失败: ${functionCall.arguments}
                             </div>`;
                     }
                 } else {
-                    chatHistory.innerHTML += `
-                        <div class="message assistant">
-                            模型尝试获取时间但未成功调用函数。
-                        </div>`;
+                // 优先显示 choices 中的内容，即使没有调用函数
+                const modelReply = data.choices[0]?.message?.content;
+                if (modelReply) {
+                    chatHistory.innerHTML += `<div class="message assistant error">模型没有调用工具，并返回了以下信息：<br>${converter.makeHtml(modelReply)}</div>`;
+                } else if (data.error && data.error.message) {
+                    chatHistory.innerHTML += `<div class="message assistant error">函数调用失败：${data.error.message}</div>`;
+                } else {
+                    chatHistory.innerHTML += `<div class="message assistant error">函数调用失败：未知错误</div>`;
                 }
             }
+            }
             } catch (error) {
-                chatHistory.innerHTML += `<div class="message assistant">请求失败: ${error.message}</div>`;
+                const errorData = await response.json().catch(() => { return {error:{message:response.statusText}}}); 
+                chatHistory.innerHTML += `<div class="message assistant error">请求失败: ${errorData}</div>`;
             } finally {
+                chatHistory.scrollTop = chatHistory.scrollHeight;
                 spinner.style.display = 'none';
             }
         }
@@ -711,6 +879,18 @@
         document.getElementById('submit').onclick = sendMessage;
         document.getElementById('functionTest').onclick = testFunctionCallCapability;
         document.getElementById('clearHistory').onclick = clearHistory;
+        document.addEventListener('DOMContentLoaded', function() {
+            const endpointSelect = document.getElementById('endpoint');
+            const customEndpoint = document.getElementById('customEndpoint');
+
+            endpointSelect.addEventListener('change', function() {
+                if (this.value === 'custom') {
+                    customEndpoint.style.display = 'block';
+                } else {
+                    customEndpoint.style.display = 'none';
+                }
+            });
+        });
 
         // 支持Enter发送
         document.getElementById('input').addEventListener('keydown', function(e) {
