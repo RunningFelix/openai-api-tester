@@ -53,7 +53,7 @@
             font-size: 16px;
             font-weight: bold;
             margin-top: 10px;
-            width: 32%;
+            width: 31%;
         }
         button:hover {
             background-color: #218838;
@@ -159,8 +159,8 @@
             cursor: pointer;
             border-bottom: 1px solid #eee;
             display: flex;
-            justify-content: space-between;
             align-items: center;
+            gap: 8px;
         }
         .history-item .key {
             flex-grow: 1;
@@ -185,8 +185,103 @@
         .clear-config-btn:hover {
             background-color: #c82333;
         }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+        }
+        .modal-content {
+            position: relative;
+            width: 95%;
+            height: 90%;
+            margin: 2% auto;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        .close-modal {
+            position: absolute;
+            right: 10px;
+            top: 10px;
+            font-size: 24px;
+            cursor: pointer;
+            background: #2c2c2c;
+            border: none;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            z-index: 1001;
+        }
+        .close-modal:hover {
+            background: #444444;
+        }
+        .modal iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            border-radius: 8px;
+        }
+        #openNextChat {
+            width: auto;        /* 根据内容自适应宽度 */
+            min-width: 40px;    /* 设置最小宽度 */
+        }
+        .history-item .content {
+            flex-grow: 1;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 100%;
+        }
+        .history-item .delete-btn {
+            background: none;
+            border: none;
+            color: #ff4444;
+            cursor: pointer;
+            padding: 4px;
+            margin: 0px;
+            border-radius: 4px;
+            visibility: hidden;
+            width: 20px;
+            height: 20px;
+            min-width: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            
+        }
+        .history-item .delete-btn i {
+            font-size: 16px;
+        }
+        .history-item:hover .delete-btn {
+            visibility: visible;
+        }
+        .history-item .delete-btn:hover {
+            background-color: #ffeeee;
+        }
+        /* 聊天历史记录样式更新 */
+        #chatHistory {
+            word-wrap: break-word;
+            overflow-x: hidden;
+        }
+        .message {
+            /* white-space: pre-line; */
+            /* overflow-wrap: break-word; */
+        }
     </style>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/showdown/1.9.1/showdown.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/showdown/2.1.0/showdown.min.js"></script>
 </head>
 <body>
     <h1><i class="fas fa-robot"></i> API 测试工具</h1>
@@ -221,9 +316,10 @@
         <textarea id="input" rows="4"></textarea>
 
         <div class="button-container">
+            <button id="openNextChat" title="打开 NextChat 聊天窗口"><i class="fas fa-external-link-alt"></i></button>
             <button id="submit"><i class="fas fa-paper-plane"></i> 发送消息-Enter</button>
             <button id="functionTest"><i class="fas fa-code"></i> 函数/工具 调用</button>
-            <button id="clearHistory"><i class="fas fa-trash-alt"></i> 清空历史记录</button>
+            <button id="clearHistory"><i class="fas fa-trash-alt"></i> 清空对话历史</button>
         </div>        
 
         <div class="spinner"><i class="fas fa-spinner"></i></div>
@@ -252,16 +348,53 @@
                 <button id="clearConfig" class="clear-config-btn">清除API配置历史记录</button>
             </div>
         </div>
+
+        <div id="nextChatModal" class="modal">
+            <div class="modal-content">
+                <button class="close-modal" onclick="closeNextChat()">×</button>
+                <iframe id="nextChatFrame"></iframe>
+            </div>
+        </div>
     </div>
 
     <script>
         let messages = [];
-        const converter = new showdown.Converter();
+        const converter = new showdown.Converter({
+            // simpleLineBreaks: false, // 防止自动将换行符转换为 <br>
+            // strikethrough: true,
+            // tables: true
+        });
 
         // Toggle advanced options
         document.querySelector('.advanced-options h3').onclick = function() {
             this.parentElement.classList.toggle('open');
         };
+
+        // 消息显示函数
+        function displayMessage(message, type, isError = false) {
+            const chatHistory = document.getElementById('chatHistory');
+            let content = message.content;
+
+            if (type === 'user' && content.includes('<')) {
+                content = `<details><summary>显示 HTML 代码</summary><pre>${content}</pre></details>`;
+            } else if (!isError) {
+                content = converter.makeHtml(content); // Markdown 转换
+            }
+
+            const className = isError ? 'message assistant error' : `message ${type}`;
+            chatHistory.innerHTML += `<div class="${className}">${content}</div>`;
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+        }
+
+        function loadChatHistory() {
+            messages = JSON.parse(localStorage.getItem('chatHistory') || '[]');
+            const chatHistory = document.getElementById('chatHistory');
+            chatHistory.innerHTML = ''; // 清空现有内容
+            
+            messages.forEach(msg => {
+                displayMessage(msg, msg.role, msg.isError || false);
+            });
+        }
 
         // 配置历史记录管理
         class ConfigHistory {
@@ -272,14 +405,47 @@
                     { value: '/v1/chat/completions', label: 'OpenAI (/v1/chat/completions)' },
                     { value: '/v1/messages', label: 'Claude (/v1/messages)' }
                 ];
-                const savedEndpoints = JSON.parse(localStorage.getItem('endpointHistory') || '[]');
-                this.endpointHistory = [...new Set([
-                    ...this.commonEndpoints.map(e => e.value),
-                    ...savedEndpoints.filter(e => !this.commonEndpoints.map(c => c.value).includes(e))
-                ])];
                 this.loadHistory();
                 this.setupInputHandlers();
                 this.loadLastUsedConfig();
+                
+                // 加载聊天历史记录
+                this.loadChatHistory();
+            }
+
+            loadChatHistory() {
+                loadChatHistory();
+            }
+
+            saveChatHistory() {
+                localStorage.setItem('chatHistory', JSON.stringify(messages));
+            }
+
+            deleteHistoryItem(type, value) {
+                const historyArray = this[`${type}History`];
+                const index = historyArray.indexOf(value);
+                const input = document.getElementById(type);
+                
+                if (index !== -1) {
+                    historyArray.splice(index, 1);
+                    
+                    // 如果删除的是key，同时删除对应的URL映射
+                    if (type === 'key') {
+                        delete this.keyUrlMap[value];
+                    }
+                    
+                    // 如果删除的值正好是当前输入框的值，则清空输入框
+                    if (input.value === value) {
+                        input.value = '';
+                        // 如果是key被删除，同时清空对应的URL输入框
+                        if (type === 'key') {
+                            document.getElementById('url').value = '';
+                        }
+                    }
+                    
+                    this.saveHistory();
+                    this.showDropdown(type); // 重新显示更新后的下拉列表
+                }
             }
 
             loadHistory() {
@@ -384,30 +550,45 @@
                     const div = document.createElement('div');
                     div.className = 'history-item';
                     
+                    const contentDiv = document.createElement('div');
+                    contentDiv.className = 'content';
+                    
                     if (type === 'key') {
-                        // 为key添加对应的URL信息
                         const keySpan = document.createElement('span');
                         keySpan.className = 'key';
                         keySpan.textContent = item;
                         
                         const urlSpan = document.createElement('span');
                         urlSpan.className = 'url';
-                        const mappedUrl = this.keyUrlMap[item]; 
+                        const mappedUrl = this.keyUrlMap[item];
                         urlSpan.textContent = mappedUrl || '(无URL记录)';
                         
-                        div.appendChild(keySpan);
-                        div.appendChild(urlSpan);
+                        contentDiv.appendChild(keySpan);
+                        contentDiv.appendChild(urlSpan);
                     } else {
-                        div.textContent = item;
+                        contentDiv.textContent = item;
                     }
                     
-                    div.addEventListener('click', () => {
-                        document.getElementById(type).value = item;
-                        // 如果选择了key，自动填充对应的URL
-                        if (type === 'key' && this.keyUrlMap[item]) {
-                            document.getElementById('url').value = this.keyUrlMap[item];
+                    const deleteBtn = document.createElement('button');
+                    deleteBtn.className = 'delete-btn';
+                    deleteBtn.innerHTML = '<i class="fas fa-times"></i>';
+                    deleteBtn.setAttribute('title', '删除'); // 添加提示文本
+                    deleteBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        this.deleteHistoryItem(type, item);
+                    };
+                    
+                    div.appendChild(contentDiv);
+                    div.appendChild(deleteBtn);
+                    
+                    div.addEventListener('click', (e) => {
+                        if (!e.target.closest('.delete-btn')) {
+                            document.getElementById(type).value = item;
+                            if (type === 'key' && this.keyUrlMap[item]) {
+                                document.getElementById('url').value = this.keyUrlMap[item];
+                            }
+                            this.hideDropdown(type);
                         }
-                        this.hideDropdown(type);
                     });
                     
                     dropdown.appendChild(div);
@@ -462,15 +643,21 @@
                 dropdown.style.display = (filteredCommon.length > 0 || filteredHistory.length > 0) ? 'block' : 'none';
             }
 
+
             showEndpointDropdown() {
                 const dropdown = document.getElementById('endpointHistory');
                 dropdown.innerHTML = '';
 
+                // 先添加系统默认选项（不可删除）
                 this.commonEndpoints.forEach(endpoint => {
                     const div = document.createElement('div');
                     div.className = 'history-item';
-                    div.textContent = endpoint.label;
-
+                    const contentDiv = document.createElement('div');
+                    contentDiv.className = 'content';
+                    contentDiv.textContent = endpoint.label;
+                    div.appendChild(contentDiv);
+                    
+                    // 系统默认选项不显示删除按钮
                     div.addEventListener('click', () => {
                         document.getElementById('endpoint').value = endpoint.value;
                         this.hideDropdown('endpoint');
@@ -479,21 +666,36 @@
                     dropdown.appendChild(div);
                 });
 
+                // 添加用户自定义选项（可删除）
+                this.endpointHistory
+                    .filter(item => !this.commonEndpoints.map(e => e.value).includes(item))
+                    .forEach(endpoint => {
+                        const div = document.createElement('div');
+                        div.className = 'history-item';
+                        
+                        const contentDiv = document.createElement('div');
+                        contentDiv.className = 'content';
+                        contentDiv.textContent = endpoint;
+                        
+                        const deleteBtn = document.createElement('button');
+                        deleteBtn.className = 'delete-btn';
+                        deleteBtn.innerHTML = '<i class="fas fa-times"></i>';
+                        deleteBtn.setAttribute('title', '删除');
+                        deleteBtn.onclick = (e) => {
+                            e.stopPropagation();
+                            this.deleteHistoryItem('endpoint', endpoint);
+                        };
 
-                this.endpointHistory.filter(item => !this.commonEndpoints.map(e=>e.value).includes(item)).forEach(endpoint => {
-                    const div = document.createElement('div');
-                    div.className = 'history-item';
-                    div.textContent = endpoint;
+                        div.appendChild(contentDiv);
+                        div.appendChild(deleteBtn);
+                        
+                        div.addEventListener('click', () => {
+                            document.getElementById('endpoint').value = endpoint;
+                            this.hideDropdown('endpoint');
+                        });
 
-                    div.addEventListener('click', () => {
-                        document.getElementById('endpoint').value = endpoint;
-                        this.hideDropdown('endpoint');
+                        dropdown.appendChild(div);
                     });
-
-                    dropdown.appendChild(div);
-                });
-
-
 
                 dropdown.style.display = 'block';
             }
@@ -554,6 +756,9 @@
                 this.keyUrlMap = {};
                 this.saveHistory();
                 localStorage.removeItem('lastUsedConfig');
+                localStorage.removeItem('chatHistory'); // 清空聊天历史
+                messages = [];
+                document.getElementById('chatHistory').innerHTML = '';
                 
                 // 清空输入框
                 document.getElementById('url').value = '';
@@ -604,7 +809,7 @@
                 configHistory.saveLastUsedConfig();
 
                 // 添加用户消息到历史记录
-                messages.push({ role: "user", content: inputText });
+                messages.push({ role: "user", content: inputText, isError: false });
                 chatHistory.innerHTML += `<div class="message user">${converter.makeHtml(inputText)}</div>`;
 
                 const headers = {
@@ -640,16 +845,26 @@
                     }
                 }
 
-                messages.push({ role: "assistant", content: content });
+                messages.push({ role: "assistant", content: content, isError: false });
                 chatHistory.innerHTML += `<div class="message assistant">${converter.makeHtml(content)}</div>`;
                 chatHistory.scrollTop = chatHistory.scrollHeight;
+
+                // 保存聊天历史
+                configHistory.saveChatHistory();
                 
                 // 只在成功发送后清空输入框
                 document.getElementById('input').value = '';
             } catch (error) {
-                chatHistory.innerHTML += `<div class="message assistant error">请求失败: ${error.message}</div>`;
-                // 失败时不清空输入框
-                chatHistory.scrollTop = chatHistory.scrollHeight;
+                const errorMsg = {
+                    role: "assistant",
+                    content: `请求失败: ${error.message}`,
+                    isError: true
+                };
+                messages.push(errorMsg);
+                displayMessage(errorMsg, "assistant", true);
+                
+                // 保存包含错误信息的聊天历史
+                configHistory.saveChatHistory();
             } finally {
                 spinner.style.display = 'none';
             }
@@ -871,14 +1086,22 @@
 
         // 清空历史
         function clearHistory() {
-            messages = [];
-            document.getElementById('chatHistory').innerHTML = '';
+            if (confirm('确定要清空所有历史记录吗？这将包括聊天记录和配置历史。')) {
+                configHistory.clearAllHistory();
+            }
         }
 
         // 事件监听器
         document.getElementById('submit').onclick = sendMessage;
         document.getElementById('functionTest').onclick = testFunctionCallCapability;
-        document.getElementById('clearHistory').onclick = clearHistory;
+        document.getElementById('clearHistory').onclick = function() {
+            if (confirm('确定要清空聊天历史记录吗？')) {
+                // 只清空聊天历史，保留配置历史
+                localStorage.removeItem('chatHistory');
+                messages = [];
+                document.getElementById('chatHistory').innerHTML = '';
+            }
+        };
         document.addEventListener('DOMContentLoaded', function() {
             const endpointSelect = document.getElementById('endpoint');
             const customEndpoint = document.getElementById('customEndpoint');
@@ -897,6 +1120,35 @@
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 sendMessage();
+            }
+        });
+
+        // 添加打开 NextChat 的处理函数
+        document.getElementById('openNextChat').onclick = function() {
+            const settings = {
+                key: document.getElementById('key').value,
+                url: document.getElementById('url').value.trim()
+            };
+
+            // 构建 NextChat URL
+            const baseUrl = 'https://app.nextchat.dev/#/';
+            const fullUrl = `${baseUrl}?settings=${JSON.stringify(settings)}`;
+
+            // 设置iframe的src并显示模态框
+            document.getElementById('nextChatFrame').src = fullUrl;
+            document.getElementById('nextChatModal').style.display = 'block';
+        };
+
+        // 添加关闭模态框的函数
+        function closeNextChat() {
+            document.getElementById('nextChatModal').style.display = 'none';
+            document.getElementById('nextChatFrame').src = ''; // 清空iframe源以停止加载
+        }
+
+        // 点击模态框背景时关闭
+        document.getElementById('nextChatModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeNextChat();
             }
         });
     </script>
